@@ -20,31 +20,3 @@ export preview, and completion messages. Settings save automatically.
 Default filenames use Author - Year - Title.pdf. Duplicate names receive (2), (3), etc.; existing files are never overwritten.
 The Citation Key option reads Citation Key: from Extra; it does not query live Better BibTeX keys.
 Copy does not embed annotations stored only in the Zotero database. Missing local PDFs are skipped.
-
-## Automatic updates
-
-Install v0.2.2 manually once to switch from earlier placeholder update addresses.
-Subsequent published versions can update through Zotero when automatic updates are enabled.
-The update feed is the latest Release's updates.json asset.
-
-## Development and publishing
-
-Run python3 build.py, node --check bootstrap.js, and node test.cjs.
-Build outputs are written to dist/. The update manifest includes the XPI SHA-256.
-To publish, increment manifest.json version, commit to the default branch, then run
-Actions → Publish Zotero plugin → Run workflow. The workflow builds and uploads a draft
-Release, then publishes it with the update feed and marks it Latest.
-Do not mark a Release without updates.json as Latest.
-
-## Validation
-
-Users have tested single-item Copy, Symlink, and the settings page in Zotero 10.0.6 on macOS.
-The regression suite uses real temporary files with mocked Zotero/Gecko APIs.
-The English settings text and versioned update path have been checked locally.
-Multi-platform behavior and the full automatic-update cycle still require real Zotero testing.
-
-## v0.2.2
-
-Author: Rui. Fixes preference pane registration from installed XPIs by passing absolute plugin resource URIs for the settings fragment and icon. Relative paths cannot be resolved against jar:file URLs with the URL constructor used by Zotero 10.
-
-The registration regression test now uses an XPI-style jar:file root URI. Actual installation/update and settings display still need verification in Zotero.
