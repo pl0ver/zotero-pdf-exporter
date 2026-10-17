@@ -46,5 +46,5 @@ jobs:
           PY
           gh release create "v$VERSION" "dist/zotero-pdf-exporter-$VERSION.xpi" dist/updates.json dist/SHA256SUMS.txt \
             --target "$GITHUB_SHA" --title "v$VERSION" \
-            --notes "Zotero PDF Exporter $VERSION by Rui. Requires Zotero 10.0.x; symlinks require macOS. Installation and settings: https://github.com/pl0ver/zotero-pdf-exporter#readme" --draft
+            --notes "Zotero PDF Exporter $VERSION. Requires Zotero 10.0.x; symlinks require macOS. Installation and settings: https://github.com/pl0ver/zotero-pdf-exporter#readme" --draft
           gh release edit "v$VERSION" --draft=false --latest
