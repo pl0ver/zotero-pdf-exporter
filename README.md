@@ -12,11 +12,28 @@ Requires Zotero 10.0.x. Symlink export requires macOS. Copy export is designed t
 ## Use
 
 Select items or PDF attachments and right-click:
+
 - Export PDFs as Copies… creates independent files for sharing.
 - Export PDFs as Symlinks… points to the original PDF. Finder may show these as Alias.
 
-Open Zotero Settings → PDF Exporter to configure filename format, optional attachment keys,
-export preview, and completion messages. Settings save automatically.
-Default filenames use Author - Year - Title.pdf. Duplicate names receive (2), (3), etc.; existing files are never overwritten.
-The Citation Key option reads Citation Key: from Extra; it does not query live Better BibTeX keys.
-Copy does not embed annotations stored only in the Zotero database. Missing local PDFs are skipped.
+### Settings
+
+Open **Zotero Settings → PDF Exporter** to configure:
+
+- Filename format
+- Optional attachment keys
+- Export preview
+- Completion messages
+
+Changes are saved automatically.
+
+### File naming
+
+- **Default format:** `Author - Year - Title.pdf`
+- **Duplicate names:** `(2)`, `(3)`, and so on are added automatically. Existing files are never overwritten.
+- **Citation Key:** Reads `Citation Key:` from the item's **Extra** field. Live Better BibTeX keys are not queried.
+
+### Notes
+
+- **Annotations:** Copy does not embed annotations stored only in the Zotero database.
+- **Missing files:** PDFs that are not available locally are skipped.
