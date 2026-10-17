@@ -7,7 +7,7 @@ Export selected Zotero PDFs as independent copies or macOS symbolic links.
 Download the XPI from [Releases](https://github.com/pl0ver/zotero-pdf-exporter/releases/latest).
 In Zotero, open Tools → Plugins → gear menu → Install Add-on From File… and select the XPI.
 
-Requires Zotero 10.0.x. Symlink export requires macOS. Copy export is designed to use Zotero file APIs; other platforms have not been tested.
+Compatible with Zotero 10.0.x. Symlink export is available on macOS only. Copy export is designed to use Zotero file APIs; other platforms have not been tested.
 
 ## Use
 
