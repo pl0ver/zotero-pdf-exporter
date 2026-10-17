@@ -2,12 +2,12 @@
 var windows = new Set();
 function install() {}
 function uninstall() {}
-async function startup() {
+async function startup({rootURI}) {
   await Zotero.initializationPromise;
   await Zotero.PreferencePanes.register({
     pluginID:'pdf-link-copy-exporter@local.invalid',
     id:'pdf-exporter-preferences',label:'PDF Exporter',
-    src:'preferences.xhtml',image:'icon.svg'
+    src:rootURI+'preferences.xhtml',image:rootURI+'icon.svg'
   });
   for (let win of Zotero.getMainWindows()) onMainWindowLoad({window:win});
 }

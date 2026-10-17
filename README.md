@@ -23,7 +23,7 @@ Copy does not embed annotations stored only in the Zotero database. Missing loca
 
 ## Automatic updates
 
-Install v0.2.1 manually once to switch from earlier placeholder update addresses.
+Install v0.2.2 manually once to switch from earlier placeholder update addresses.
 Subsequent published versions can update through Zotero when automatic updates are enabled.
 The update feed is the latest Release's updates.json asset.
 
@@ -42,3 +42,9 @@ Users have tested single-item Copy, Symlink, and the settings page in Zotero 10.
 The regression suite uses real temporary files with mocked Zotero/Gecko APIs.
 The English settings text and versioned update path have been checked locally.
 Multi-platform behavior and the full automatic-update cycle still require real Zotero testing.
+
+## v0.2.2
+
+Author: Rui. Fixes preference pane registration from installed XPIs by passing absolute plugin resource URIs for the settings fragment and icon. Relative paths cannot be resolved against jar:file URLs with the URL constructor used by Zotero 10.
+
+The registration regression test now uses an XPI-style jar:file root URI. Actual installation/update and settings display still need verification in Zotero.

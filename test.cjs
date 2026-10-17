@@ -15,7 +15,7 @@ class File {
 const picker={init(parent){assert.equal(parent,'browsing-context');calls++;},open(cb){cb(0);},file:new File(dest)};
 const ctypes={default_abi:0,int:0,char:{ptr:0},errno:17,open(lib){assert.equal(lib,'/usr/lib/libSystem.B.dylib');return {declare(name){assert.equal(name,'symlink');return (s,t)=>{try{fs.symlinkSync(s,t);return 0;}catch{return -1;}};},close(){closed++;}};}};
 const preferences=new Map();let registeredPane;
-const Z={Prefs:{get:(key)=>preferences.get(key)},PreferencePanes:{register:async options=>{registeredPane=options;}},initializationPromise:Promise.resolve(),getMainWindows:()=>[],isMac:true,logError(){},Items:{get:id=>id===1?attachment:parent}};
+const Z={Prefs:{get:(key)=>preferences.get(key)},PreferencePanes:{register:async options=>{new URL(options.src,'jar:file:///tmp/exporter.xpi!/');new URL(options.image,'jar:file:///tmp/exporter.xpi!/');registeredPane=options;}},initializationPromise:Promise.resolve(),getMainWindows:()=>[],isMac:true,logError(){},Items:{get:id=>id===1?attachment:parent}};
 const ctx=vm.createContext({Zotero:Z,TextEncoder,Set,ChromeUtils:{importESModule:()=>({ctypes})},
  Cc:{'@mozilla.org/filepicker;1':{createInstance:()=>picker}},Ci:{nsIFilePicker:{modeGetFolder:2,returnOK:0},nsIFile:0},
  Components:{classes:{'@mozilla.org/file/local;1':{createInstance:()=>new File()}}},
@@ -44,7 +44,7 @@ vm.runInContext(fs.readFileSync(path.join(__dirname,'bootstrap.js'),'utf8'),ctx)
  selected=[parent];ctx.IOUtils.copy=async()=>{throw Error('Permission denied');};
  await ctx.exportSelection(win,'copy');const failure=alerts.pop();assert.match(failure.title,/could not/);assert.match(failure.message,/Permission denied/);assert.equal(ctx.exportBusy,false);
  assert.equal(calls,5);assert.equal(closed,4);
- await ctx.startup();assert.equal(registeredPane.src,'preferences.xhtml');assert.equal(registeredPane.label,'PDF Exporter');
+ await ctx.startup({rootURI:'jar:file:///tmp/exporter.xpi!/'});assert.equal(registeredPane.src,'jar:file:///tmp/exporter.xpi!/preferences.xhtml');assert.equal(registeredPane.label,'PDF Exporter');
  preferences.set('extensions.pdf-link-copy-exporter.naming','original');attachment.attachmentFilename='Original.pdf';
  assert.equal(ctx.filenameFor(parent,attachment),'Original.pdf');
  preferences.set('extensions.pdf-link-copy-exporter.appendKey',true);assert.equal(ctx.filenameFor(parent,attachment),'Original - ABCD1234.pdf');
