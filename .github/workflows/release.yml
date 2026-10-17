@@ -1,0 +1,50 @@
+name: Publish Zotero plugin
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: publish-plugin
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Require default branch and expected repository
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          test "$GITHUB_REF" = "refs/heads/$DEFAULT_BRANCH"
+          test "$GITHUB_REPOSITORY" = "pl0ver/zotero-pdf-exporter"
+      - name: Check and build
+        run: |
+          node --check bootstrap.js
+          node test.cjs
+          python3 build.py
+      - name: Publish version and update feed together
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(python3 -c 'import json; print(json.load(open("manifest.json"))["version"])')
+          export VERSION
+          gh api "repos/$GITHUB_REPOSITORY/releases" > /tmp/plugin-releases.json
+          python3 - <<'PY'
+          import json, os
+          version = tuple(map(int, os.environ['VERSION'].split('.')))
+          for release in json.load(open('/tmp/plugin-releases.json')):
+              if release['draft'] or release['prerelease']:
+                  continue
+              try:
+                  previous = tuple(map(int, release['tag_name'].removeprefix('v').split('.')))
+              except ValueError:
+                  continue
+              assert version > previous, 'Bump manifest version before publishing'
+          PY
+          gh release create "v$VERSION" "dist/zotero-pdf-exporter-$VERSION.xpi" dist/updates.json dist/SHA256SUMS.txt \
+            --target "$GITHUB_SHA" --title "v$VERSION" \
+            --notes "Zotero PDF Exporter $VERSION. Requires Zotero 10.0.x; symlinks require macOS." --draft
+          gh release edit "v$VERSION" --draft=false --latest
