@@ -16,23 +16,29 @@ function shutdown() {
 }
 function onMainWindowLoad({window}) {
   const doc=window.document;
-  const popup=doc.getElementById('zotero-itemmenu');
-  if (!popup || doc.getElementById('pdf-exporter-links')) return;
   windows.add(window);
-  for (let [id,label,mode] of [
-    ['pdf-exporter-links','Export PDFs as Symlinks…','symlink'],
-    ['pdf-exporter-copies','Export PDFs as Copies…','copy']
-  ]) {
-    let menu=doc.createXULElement('menuitem');
-    menu.id=id;menu.setAttribute('label',label);
-    menu.addEventListener('command',()=>exportSelection(window,mode).catch(e=>{
-      Zotero.logError(e);Services.prompt.alert(window,'PDF Export','Export failed: '+e.message);
-    }));
-    popup.appendChild(menu);
+  for (const collectionMode of [false,true]) {
+    const popup=doc.getElementById(collectionMode?'zotero-collectionmenu':'zotero-itemmenu');
+    if (!popup) continue;
+    for (const mode of ['symlink','copy']) {
+      const id='pdf-exporter-'+(collectionMode?'collection-':'')+mode;
+      if (doc.getElementById(id)) continue;
+      const menu=doc.createXULElement('menuitem');
+      menu.id=id;
+      menu.setAttribute('label',collectionMode
+        ? `Export Collection as ${mode==='copy'?'PDF Copies':'PDF Symlinks'}…`
+        : `Export PDFs as ${mode==='copy'?'Copies':'Symlinks'}…`);
+      menu.addEventListener('command',()=>exportSelection(window,mode,collectionMode).catch(e=>{
+        Zotero.logError(e);Services.prompt.alert(window,'PDF Export','Export failed: '+e.message);
+      }));
+      popup.appendChild(menu);
+    }
   }
 }
 function onMainWindowUnload({window}) {
-  for (let id of ['pdf-exporter-links','pdf-exporter-copies']) window.document.getElementById(id)?.remove();
+  // Include legacy IDs so hot upgrades remove menus from earlier builds.
+  for (const id of ['pdf-exporter-links','pdf-exporter-copies','pdf-exporter-copy','pdf-exporter-symlink',
+    'pdf-exporter-collection-copy','pdf-exporter-collection-symlink']) window.document.getElementById(id)?.remove();
   windows.delete(window);
 }
 function clean(s) {s=String(s||'').normalize('NFC').replace(/[\\/:*?"<>|\x00-\x1f]/g,'_').replace(/\s+/g,' ').trim(); let out=''; for (const c of s) {if (new TextEncoder().encode(out+c).length>180) break;out+=c;} return out||'Untitled';}
@@ -63,13 +69,8 @@ async function chooseFolder(win) {
   const result=await new Promise(resolve=>picker.open(resolve));
   return result===Ci.nsIFilePicker.returnOK ? picker.file : null;
 }
-async function exportSelection(win,mode) {
-  if (exportBusy) {win.alert('An export is already in progress.');return;}
-  exportBusy=true;
-  try {
-  const pane=win.ZoteroPane||Zotero.getActiveZoteroPane();
-  const selected=pane.getSelectedItems();
-  const entries=[];const seen=new Set();
+async function pdfEntries(selected) {
+  const entries=[],seen=new Set();
   for (let item of selected) {
     let attachments=item.isAttachment()?[item]:item.isRegularItem()?item.getAttachments().map(id=>Zotero.Items.get(id)):[];
     for (let a of attachments) {
@@ -84,29 +85,93 @@ async function exportSelection(win,mode) {
       entries.push({source:file,name:filenameFor(parent,a)});
     }
   }
-  if (!entries.length) {win.alert('No locally available PDF attachments in selection.');return;}
-  const folder=await chooseFolder(win);if (!folder)return;
-  const planned=[];const reserved=new Set();
-  // Directory enumeration catches dangling symlinks, for which exists() can be false.
-  const dirEntries=folder.directoryEntries;
-  while(dirEntries.hasMoreElements()) {
-    const child=dirEntries.getNext().QueryInterface(Ci.nsIFile);
-    reserved.add(child.leafName.toLowerCase());
-  }
-  for (let entry of entries) {
-    const stem=entry.name.slice(0,-4);let n=1,name=entry.name,target;
-    while (true) {
-      target=folder.clone();target.append(name);
-      if (!target.exists()&&!reserved.has(name.toLowerCase()))break;
-      name=`${stem} (${++n}).pdf`;
+  return entries;
+}
+function folderName(name) {
+  const value=clean(name);
+  return value==='.'||value==='..' ? 'Untitled' : value;
+}
+function reserveName(base,reserved,extension='') {
+  let name=base+extension,n=1;
+  while (reserved.has(name.toLowerCase())) name=base+' ('+(++n)+')'+extension;
+  reserved.add(name.toLowerCase());
+  return name;
+}
+function existingNames(folder) {
+  const names=new Set();
+  if (!folder.exists()) return names;
+  const children=folder.directoryEntries;
+  while(children.hasMoreElements()) names.add(children.getNext().QueryInterface(Ci.nsIFile).leafName.toLowerCase());
+  return names;
+}
+async function collectionGroups(selected) {
+  const selectedIDs=new Set(selected.map(c=>c.id)),seenRoots=new Set(),groups=[];
+  for (const collection of selected) {
+    if (seenRoots.has(collection.id)) continue;
+    seenRoots.add(collection.id);
+    let ancestorID=collection.parentID,covered=false;
+    while(ancestorID) {
+      if(selectedIDs.has(ancestorID)){covered=true;break;}
+      ancestorID=Zotero.Collections.get(ancestorID)?.parentID;
     }
-    reserved.add(name.toLowerCase());planned.push({...entry,target,name});
+    if (covered) continue;
+    // Names are reserved per parent so sanitized duplicate collection names stay separate.
+    async function visit(c,parentGroup) {
+      await c.loadDataType('childItems');
+      await c.loadDataType('childCollections');
+      const group={name:folderName(c.name),parentGroup,entries:await pdfEntries(c.getChildItems())};
+      groups.push(group);
+      for(const child of c.getChildCollections()) await visit(child,group);
+    }
+    await visit(collection,null);
+  }
+  return groups;
+}
+async function exportSelection(win,mode,collectionMode=false) {
+  if (exportBusy) {win.alert('An export is already in progress.');return;}
+  exportBusy=true;
+  try {
+  const pane=win.ZoteroPane||Zotero.getActiveZoteroPane();
+  let groups;
+  if (collectionMode) {
+    const collections=pane.getSelectedCollections();
+    if (!collections.length) {win.alert('Select a collection to export.');return;}
+    groups=await collectionGroups(collections);
+  } else {
+    const entries=await pdfEntries(pane.getSelectedItems());
+    if (!entries.length) {win.alert('No locally available PDF attachments in selection.');return;}
+    groups=[{entries}];
+  }
+  const folder=await chooseFolder(win);if (!folder)return;
+  const planned=[],directories=[],namesByPath=new Map();
+  function namesFor(dir) {
+    if (!namesByPath.has(dir.path)) namesByPath.set(dir.path,existingNames(dir));
+    return namesByPath.get(dir.path);
+  }
+  for(const group of groups) {
+    group.folder=folder;
+    group.relative='';
+    if (collectionMode) {
+      const parentFolder=group.parentGroup?.folder||folder;
+      const name=reserveName(group.name,namesFor(parentFolder));
+      group.folder=parentFolder.clone();group.folder.append(name);
+      group.relative=(group.parentGroup?.relative||'')+name+'/';
+      directories.push(group.folder);
+    }
+    for(const entry of group.entries) {
+      const name=reserveName(entry.name.slice(0,-4),namesFor(group.folder),'.pdf');
+      const target=group.folder.clone();target.append(name);
+      planned.push({...entry,target,name:group.relative+name});
+    }
   }
   let preview=planned.slice(0,15).map(x=>x.name).join('\n');
+  if (!planned.length) preview=groups.map(g=>g.relative).slice(0,15).join('\n');
   let extra=planned.length>15?`\n… and ${planned.length-15} more`:'';
   let confirmed=!setting('showPreview',true)||Services.prompt.confirm(win,'PDF Export Preview',
     `${mode==='copy'?'Copy':'Create symlinks for'} ${planned.length} PDF(s) to:\n${folder.path}\n\n${preview}${extra}\n\nNo existing files will be replaced. Continue?`);
   if (!confirmed)return;
+  // A new root directory is created exclusively; existing folders/links are never reused.
+  for (const dir of directories) await IOUtils.makeDirectory(dir.path,{ignoreExisting:false});
   let success=0,errors=[];
   for (let p of planned) {
     try {

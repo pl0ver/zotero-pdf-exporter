@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Zotero PDF Link & Copy Exporter",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Export selected Zotero PDFs as symbolic links or independent copies.",
   "author": "Rui",
   "applications": {

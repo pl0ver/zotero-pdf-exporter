@@ -4,7 +4,7 @@ const vm=require('node:vm'),assert=require('node:assert/strict');
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'pdf-exporter-test-'));
 const source=path.join(root,'中文 source.pdf');fs.writeFileSync(source,'%PDF-1.4\nfixture');
 const dest=path.join(root,'out');fs.mkdirSync(dest);
-let selected=[],confirmed=true,alerts=[],calls=0,closed=0;
+let selected=[],confirmed=true,alerts=[],calls=0,closed=0,previews=[];
 class File {
  initWithPath(p){this.path=p;} constructor(p){this.path=p;}
  exists(){return fs.existsSync(this.path);} isFile(){return fs.statSync(this.path).isFile();}
@@ -20,7 +20,7 @@ const ctx=vm.createContext({Zotero:Z,TextEncoder,Set,ChromeUtils:{importESModule
  Cc:{'@mozilla.org/filepicker;1':{createInstance:()=>picker}},Ci:{nsIFilePicker:{modeGetFolder:2,returnOK:0},nsIFile:0},
  Components:{classes:{'@mozilla.org/file/local;1':{createInstance:()=>new File()}}},
  IOUtils:{copy:async(s,t,o)=>{assert.equal(o.noOverwrite,true);fs.copyFileSync(s,t,fs.constants.COPYFILE_EXCL);}},
- Services:{prompt:{confirm:()=>confirmed,alert:(w,title,message)=>alerts.push({title,message})}}});
+ Services:{prompt:{confirm:(w,title,message)=>{previews.push(message);return confirmed;},alert:(w,title,message)=>alerts.push({title,message})}}});
 const parent={isAttachment:()=>false,isRegularItem:()=>true,getAttachments:()=>[1],getCreators:()=>[{lastName:'王'}],getField:n=>({title:'Test',date:'2026',extra:'Citation Key: Wang2026'}[n]||'')};
 const attachment={id:1,key:'ABCD1234',parentItemID:2,isAttachment:()=>true,isRegularItem:()=>false,attachmentContentType:'application/pdf',getFilePathAsync:async()=>source};
 const win={browsingContext:'browsing-context',ZoteroPane:{getSelectedItems:()=>selected},alert:m=>alerts.push(m)};
@@ -55,5 +55,53 @@ vm.runInContext(fs.readFileSync(path.join(__dirname,'bootstrap.js'),'utf8'),ctx)
  await ctx.exportSelection(win,'copy');assert.match(alerts.pop().message,/Exported 1 PDF/);
  preferences.set('extensions.pdf-link-copy-exporter.showSuccess',false);
  await ctx.exportSelection(win,'copy');assert.equal(alerts.length,0);
- console.log('PASS: settings register, live naming, optional keys, disabled preview, optional success prompt; copy integrity, duplicate selection, collision rename, symlink target, cancellation, dangling link / directory / file protection, UTF-8 name limit, Extra citation key, empty selection, lock cleanup. Gecko/Zotero APIs mocked.');
+ // Collection export exercises actual nested directories and membership semantics.
+ ctx.IOUtils.makeDirectory=async(dir,options)=>{assert.equal(options.ignoreExisting,false);fs.mkdirSync(dir);};
+ const collections=new Map();
+ function collection(id,name,parentID,items,children=[]) {
+   const loaded=new Set();const c={id,name,parentID,loadDataType:async type=>loaded.add(type),
+     getChildItems:()=>{assert.ok(loaded.has('childItems'));return items;},
+     getChildCollections:()=>{assert.ok(loaded.has('childCollections'));return children;}};
+   collections.set(id,c);return c;
+ }
+ const grandchild=collection(13,'Nested',11,[parent]);
+ const child=collection(11,'A/B',10,[parent,attachment],[grandchild]);
+ const sameNameChild=collection(12,'A:B',10,[parent]);
+ const empty=collection(14,'Empty',10,[]);
+ const research=collection(10,'Research',null,[parent],[child,sameNameChild,empty]);
+ const dots=collection(15,'..',null,[]);
+ Z.Collections={get:id=>collections.get(id)};
+ let selectedCollections=[research,child,research];
+ win.ZoteroPane.getSelectedCollections=()=>selectedCollections;
+ preferences.delete('extensions.pdf-link-copy-exporter.naming');
+ preferences.set('extensions.pdf-link-copy-exporter.showPreview',true);confirmed=true;
+ fs.mkdirSync(path.join(dest,'Research'));
+ await ctx.exportSelection(win,'copy',true);
+ const exported=path.join(dest,'Research (2)');
+ for(const rel of ['王 - 2026 - Test.pdf','A_B/王 - 2026 - Test.pdf','A_B/Nested/王 - 2026 - Test.pdf','A_B (2)/王 - 2026 - Test.pdf']) {
+   assert.equal(fs.readFileSync(path.join(exported,rel),'utf8'),fs.readFileSync(source,'utf8'));
+ }
+ assert.ok(fs.statSync(path.join(exported,'Empty')).isDirectory());
+ assert.equal(fs.readdirSync(path.join(exported,'A_B')).length,2); // one PDF plus Nested
+ assert.match(previews.at(-1),/Research \(2\)\/A_B\/Nested/);
+ assert.equal(fs.readdirSync(dest).filter(n=>n.startsWith('Research')).length,2);
+ await ctx.exportSelection(win,'symlink',true);
+ assert.equal(fs.readlinkSync(path.join(dest,'Research (3)','A_B','王 - 2026 - Test.pdf')),source);
+ const before=fs.readdirSync(dest);confirmed=false;
+ await ctx.exportSelection(win,'copy',true);assert.deepEqual(fs.readdirSync(dest),before);
+ confirmed=true;selectedCollections=[dots];await ctx.exportSelection(win,'copy',true);
+ assert.ok(fs.statSync(path.join(dest,'Untitled')).isDirectory());
+ selectedCollections=[];await ctx.exportSelection(win,'copy',true);assert.match(alerts.pop(),/Select a collection/);
+ // An exclusive-directory failure leaves the lock usable and does not write PDFs.
+ selectedCollections=[research];ctx.IOUtils.makeDirectory=async()=>{throw Error('Permission denied');};
+ await assert.rejects(()=>ctx.exportSelection(win,'copy',true),/Permission denied/);assert.equal(ctx.exportBusy,false);
+ const menuElements=new Map(),appended=[];
+ function element() {return {setAttribute(){},addEventListener(name,handler){this[name]=handler;},remove(){menuElements.delete(this.id);}};}
+ const menuWindow={document:{getElementById:id=>id==='zotero-itemmenu'||id==='zotero-collectionmenu'
+   ? {appendChild:node=>{appended.push(node);menuElements.set(node.id,node);}}
+   :menuElements.get(id),createXULElement:element}};
+ ctx.onMainWindowLoad({window:menuWindow});ctx.onMainWindowLoad({window:menuWindow});
+ assert.equal(appended.length,4);assert.ok(menuElements.get('pdf-exporter-collection-copy').command);
+ ctx.onMainWindowUnload({window:menuWindow});assert.equal(menuElements.size,0);
+ console.log('PASS: recursive collections, shared membership, ancestor pruning, folder collisions, empty folders, traversal-safe names, cancellation, mkdir failure; settings register, live naming, optional keys, disabled preview, optional success prompt; copy integrity, duplicate selection, collision rename, symlink target, cancellation, dangling link / directory / file protection, UTF-8 name limit, Extra citation key, empty selection, lock cleanup. Gecko/Zotero APIs mocked.');
 } finally {fs.rmSync(root,{recursive:true,force:true});}})().catch(e=>{console.error(e);process.exitCode=1;});

@@ -16,6 +16,13 @@ Select items or PDF attachments and right-click:
 - Export PDFs as Copies… creates independent files for sharing.
 - Export PDFs as Symlinks… points to the original PDF. Finder may show these as Alias.
 
+### Collections
+
+Right-click a collection and choose **Export Collection as PDF Copies…** or **Export Collection as PDF Symlinks…**.
+Choose the destination parent folder. The exporter creates a folder named after the collection and preserves its subcollections as subfolders, including empty collections.
+
+If a destination folder already exists, a new numbered folder is created. Items belonging to multiple collections are exported into each corresponding folder. Selecting both a parent and its subcollection exports the tree once.
+
 ### Settings
 
 Open **Zotero Settings → PDF Exporter** to configure:
