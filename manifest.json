@@ -1,0 +1,19 @@
+{
+  "manifest_version": 2,
+  "name": "Zotero PDF Link & Copy Exporter",
+  "version": "0.2.1",
+  "description": "Export selected Zotero PDFs as symbolic links or independent copies.",
+  "author": "Community prototype",
+  "applications": {
+    "zotero": {
+      "id": "pdf-link-copy-exporter@local.invalid",
+      "strict_min_version": "10.0",
+      "strict_max_version": "10.0.*",
+      "update_url": "https://github.com/pl0ver/zotero-pdf-exporter/releases/latest/download/updates.json"
+    }
+  },
+  "icons": {
+    "48": "icon.svg",
+    "96": "icon.svg"
+  }
+}

@@ -1,0 +1,34 @@
+<vbox xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+      xmlns:html="http://www.w3.org/1999/xhtml" id="pdf-exporter-settings">
+  <vbox class="main-section">
+    <description>Export PDFs as independent copies or symbolic links. Changes are saved automatically and apply to your next export.</description>
+    <groupbox aria-labelledby="pdf-exporter-naming-title">
+      <label><html:h2 id="pdf-exporter-naming-title">File Naming</html:h2></label>
+      <hbox align="center">
+        <label value="Naming format" control="pdf-exporter-naming"/>
+        <menulist id="pdf-exporter-naming" preference="extensions.pdf-link-copy-exporter.naming" native="true">
+          <menupopup>
+            <menuitem label="Author - Year - Title" value="author"/>
+            <menuitem label="Citation Key (Extra field)" value="citation"/>
+            <menuitem label="Original PDF filename" value="original"/>
+          </menupopup>
+        </menulist>
+      </hbox>
+      <description>Example: Maldacena - 1998 - The Large N Limit of Superconformal Field Theories and Supergravity.pdf</description>
+      <description>Reads Citation Key: from the item’s Extra field. Falls back to Author - Year - Title when no key is available. Live Better BibTeX keys are not queried.</description>
+      <checkbox id="pdf-exporter-append-key" label="Append the Zotero attachment key to filenames" preference="extensions.pdf-link-copy-exporter.appendKey"/>
+      <description>Duplicate names receive (2), (3), and so on. Existing files are never overwritten.</description>
+    </groupbox>
+    <groupbox aria-labelledby="pdf-exporter-prompts-title">
+      <label><html:h2 id="pdf-exporter-prompts-title">Export Prompts</html:h2></label>
+      <checkbox id="pdf-exporter-preview" label="Preview filenames and confirm before exporting" preference="extensions.pdf-link-copy-exporter.showPreview"/>
+      <checkbox id="pdf-exporter-success" label="Show a completion message after a successful export" preference="extensions.pdf-link-copy-exporter.showSuccess"/>
+      <description>Successful exports finish silently by default. Errors are always reported.</description>
+    </groupbox>
+    <groupbox aria-labelledby="pdf-exporter-use-title">
+      <label><html:h2 id="pdf-exporter-use-title">How to Export</html:h2></label>
+      <description>Select items or PDF attachments, right-click, and choose Export PDFs as Copies… or Export PDFs as Symlinks…. Then select a destination folder.</description>
+      <description>Copy creates an independent PDF for sharing. Symlink points to the original file and is supported on macOS only. Finder may display symbolic links as Alias.</description>
+    </groupbox>
+  </vbox>
+</vbox>
