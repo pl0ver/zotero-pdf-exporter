@@ -21,7 +21,7 @@ Select items or PDF attachments and right-click:
 Right-click a collection and choose **Export Collection as PDF Copies…** or **Export Collection as PDF Symlinks…**.
 Choose the destination parent folder. The exporter creates a folder named after the collection and preserves its subcollections as subfolders, including empty collections.
 
-If a destination folder already exists, a new numbered folder is created. Items belonging to multiple collections are exported into each corresponding folder. Selecting both a parent and its subcollection exports the tree once.
+Existing collection folders are reused, with a Replace or Keep Existing prompt for each conflicting PDF. Folder names that collide with files or symbolic links are numbered instead. Items belonging to multiple collections are exported into each corresponding folder. Selecting both a parent and its subcollection exports the tree once.
 
 ### Settings
 
@@ -36,8 +36,8 @@ Changes are saved automatically.
 
 ### File naming
 
-- **Default format:** `Author - Year - Title.pdf`
-- **Duplicate names:** `(2)`, `(3)`, and so on are added automatically. Existing files are never overwritten.
+- **Default format:** `Author - Year - Title.pdf`, using the first creator whose role is Author. Editors are ignored; items without an Author use `Unknown`.
+- **Existing files:** Choose **Replace**, **Keep Existing** (skip), or **Cancel Export** when a filename already exists. Different PDFs sharing a filename in the same export receive `(2)`, `(3)`, and so on.
 - **Citation Key:** Reads `Citation Key:` from the item's **Extra** field. Live Better BibTeX keys are not queried.
 
 ### Notes

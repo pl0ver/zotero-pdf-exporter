@@ -56,7 +56,7 @@ function filenameFor(item,attachment) {
     stem=(item.getField('extra')||'').match(/^Citation Key:\s*(.+)$/im)?.[1]?.trim();
   }
   if (!stem) {
-    const creator=item.getCreators?.()[0];
+    const creator=item.getCreators?.().find(c=>c.creatorTypeID===Zotero.CreatorTypes.getID('author'));
     const author=creator ? (creator.lastName||creator.name||'Unknown') : 'Unknown';
     const year=(item.getField('date')||'').match(/\b(?:18|19|20|21)\d{2}\b/)?.[0]||'n.d.';
     stem=`${author} - ${year} - ${item.getField('title')||'Untitled'}`;
@@ -145,7 +145,7 @@ async function exportSelection(win,mode,collectionMode=false) {
   const folder=await chooseFolder(win);if (!folder)return;
   const planned=[],directories=[],namesByPath=new Map();
   function namesFor(dir) {
-    if (!namesByPath.has(dir.path)) namesByPath.set(dir.path,existingNames(dir));
+    if (!namesByPath.has(dir.path)) namesByPath.set(dir.path,new Set());
     return namesByPath.get(dir.path);
   }
   for(const group of groups) {
@@ -153,10 +153,19 @@ async function exportSelection(win,mode,collectionMode=false) {
     group.relative='';
     if (collectionMode) {
       const parentFolder=group.parentGroup?.folder||folder;
-      const name=reserveName(group.name,namesFor(parentFolder));
+      const reserved=namesFor(parentFolder);
+      // Reuse real collection folders, but never traverse a destination symlink.
+      const blocked=existingNames(parentFolder);
+      const siblings=parentFolder.exists()?parentFolder.directoryEntries:null;
+      while(siblings?.hasMoreElements()) {
+        const candidate=siblings.getNext().QueryInterface(Ci.nsIFile);
+        try {if (candidate.isDirectory()&&!candidate.isSymlink()) blocked.delete(candidate.leafName.toLowerCase());} catch(e) {}
+      }
+      const unavailable=new Set([...blocked,...reserved]);
+      const name=reserveName(group.name,unavailable);reserved.add(name.toLowerCase());
       group.folder=parentFolder.clone();group.folder.append(name);
       group.relative=(group.parentGroup?.relative||'')+name+'/';
-      directories.push(group.folder);
+      if (!group.folder.exists()) directories.push(group.folder);
     }
     for(const entry of group.entries) {
       const name=reserveName(entry.name.slice(0,-4),namesFor(group.folder),'.pdf');
@@ -168,16 +177,30 @@ async function exportSelection(win,mode,collectionMode=false) {
   if (!planned.length) preview=groups.map(g=>g.relative).slice(0,15).join('\n');
   let extra=planned.length>15?`\n… and ${planned.length-15} more`:'';
   let confirmed=!setting('showPreview',true)||Services.prompt.confirm(win,'PDF Export Preview',
-    `${mode==='copy'?'Copy':'Create symlinks for'} ${planned.length} PDF(s) to:\n${folder.path}\n\n${preview}${extra}\n\nNo existing files will be replaced. Continue?`);
+    `${mode==='copy'?'Copy':'Create symlinks for'} ${planned.length} PDF(s) to:\n${folder.path}\n\n${preview}${extra}\n\nIf a file already exists, you will be asked whether to replace it or keep it. Continue?`);
   if (!confirmed)return;
-  // A new root directory is created exclusively; existing folders/links are never reused.
+  // Create only missing collection directories; reuse real folders, never destination links.
   for (const dir of directories) await IOUtils.makeDirectory(dir.path,{ignoreExisting:false});
-  let success=0,errors=[];
+  let success=0,skipped=0,cancelled=false,errors=[];
   for (let p of planned) {
     try {
-      // Recheck immediately before writing; never overwrite an existing path.
-      if (p.target.exists())throw Error('Destination already exists');
-      if (mode==='copy') {
+      const existing=findExistingTarget(p.target);
+      if (existing) {
+        if (existing.path.normalize('NFC').toLowerCase()===p.source.path.normalize('NFC').toLowerCase()) {
+          throw Error('Destination is the original PDF; choose another export folder.');
+        }
+        if (!existing.isSymlink() && existing.isDirectory()) throw Error('A folder has this filename; it cannot be replaced.');
+        const prompt=Services.prompt;
+        const choice=prompt.confirmEx(win,'PDF Exporter — File already exists',
+          `${p.name}\n\nReplace the existing file or keep it?`,
+          prompt.BUTTON_POS_0*prompt.BUTTON_TITLE_IS_STRING|
+          prompt.BUTTON_POS_1*prompt.BUTTON_TITLE_IS_STRING|
+          prompt.BUTTON_POS_2*prompt.BUTTON_TITLE_IS_STRING|prompt.BUTTON_POS_1_DEFAULT,
+          'Replace','Keep Existing','Cancel Export',null,{});
+        if(choice===2){cancelled=true;break;}
+        if(choice!==0){skipped++;continue;}
+        await replaceExport(p.source,existing,mode);
+      } else if (mode==='copy') {
         await IOUtils.copy(p.source.path,p.target.path,{noOverwrite:true});
       } else {
         createMacSymlink(p.source.path,p.target.path);
@@ -188,13 +211,46 @@ async function exportSelection(win,mode,collectionMode=false) {
   // Successful exports finish silently; failures remain visible and actionable.
   if (errors.length) {
     Services.prompt.alert(win,'PDF Export — Some files could not be exported',
-      `Exported ${success}/${planned.length} PDFs.\n\n${errors.slice(0,10).join('\n')}`
+      `Exported ${success}/${planned.length} PDFs; kept ${skipped} existing file(s).\n\n${errors.slice(0,10).join('\n')}`
       +(errors.length>10?`\n… and ${errors.length-10} more errors. See Zotero Error Console.`:''));
   }
-  if (!errors.length && setting('showSuccess',false)) {
-    Services.prompt.alert(win,'PDF Exporter',`Exported ${success} PDF(s).`);
+  if (cancelled) Services.prompt.alert(win,'PDF Exporter','Export cancelled. Files already exported have been retained.');
+  if (!cancelled && !errors.length && setting('showSuccess',false)) {
+    Services.prompt.alert(win,'PDF Exporter',`Exported ${success} PDF(s). Kept ${skipped} existing file(s).`);
   }
   } finally {exportBusy=false;}
+}
+
+// Enumerating also finds dangling links and case-only filename differences.
+function findExistingTarget(target) {
+  if (!target.parent.exists()) return null;
+  const children=target.parent.directoryEntries;
+  while(children.hasMoreElements()) {
+    const file=children.getNext().QueryInterface(Ci.nsIFile);
+    if(file.leafName.normalize('NFC').toLowerCase()===target.leafName.normalize('NFC').toLowerCase()) return file;
+  }
+  return null;
+}
+async function replaceExport(source,target,mode) {
+  // Prepare the complete replacement before touching the destination. Renaming an
+  // entry replaces a symlink itself, never writes through it to the original PDF.
+  const temp=target.parent.clone();temp.append('.pdf-exporter');
+  temp.createUnique(Ci.nsIFile.DIRECTORY_TYPE,0o700);
+  try {
+    const staged=temp.clone();staged.append('export.pdf');
+    if(mode==='copy') await IOUtils.copy(source.path,staged.path,{noOverwrite:true});
+    else createMacSymlink(source.path,staged.path);
+    if(Zotero.isMac) {
+      const {ctypes}=ChromeUtils.importESModule('resource://gre/modules/ctypes.sys.mjs');
+      const libc=ctypes.open('/usr/lib/libSystem.B.dylib');
+      try {
+        const rename=libc.declare('rename',ctypes.default_abi,ctypes.int,ctypes.char.ptr,ctypes.char.ptr);
+        if(rename(staged.path,target.path)!==0) throw Error('Cannot replace file (errno '+ctypes.errno+').');
+      } finally {libc.close();}
+    } else {
+      await IOUtils.move(staged.path,target.path,{noOverwrite:false});
+    }
+  } finally {temp.remove(true);}
 }
 
 var exportBusy=false;
